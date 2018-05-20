@@ -26,7 +26,7 @@
           <div class="table-column">transactionsRoot</div> -->
         </div>
       </div>
-      <div class="table-body" :class="`${blocks.length<=0 ? 'table-body-loading' : ''}`">
+      <div v-if="loading || blocks.length" class="table-body" :class="`${loading ? 'table-body-loading' : ''}`">
         <div class="table-row" v-for="(block,i) in blocks" :key="`block-${i}`">
           <div class="table-column" v-text="block.number"></div>
           <div class="table-column" v-text="block.timestamp"></div>
@@ -49,6 +49,7 @@
           <div class="table-column" v-text="block.transactionsRoot"></div> -->
         </div>
       </div>
+      <div v-else class="table-body-nodata">No data</div>
     </div>
 
     <br>
@@ -73,7 +74,7 @@
             <div class="table-column">v</div> -->
         </div>
       </div>
-      <div class="table-body" :class="`${txs.length<=0 ? 'table-body-loading' : ''}`" >
+      <div v-if="loading || txs.length" class="table-body" :class="`${loading ? 'table-body-loading' : ''}`" >
         <div class="table-row" v-for="(tx,i) in txs" :key="`tx-${i}`">
           <div class="table-column" v-text="tx.hash"></div>
           <div class="table-column" v-text="tx.blockHash"></div>
@@ -92,6 +93,7 @@
           <div class="table-column" v-text="tx.v"></div> -->
         </div>
       </div>
+      <div v-else class="table-body-nodata">No data</div>
     </div>
   </div>
 </template>
@@ -102,43 +104,58 @@ import Web3 from 'web3';
 export default {
   data() {
     return {
-      title: 'Simple Blockchain Browser',
+      title: 'A Simple Blockchain Browser',
       blocks: [],
-      txs: []
+      txs: [],
+      timmer: null,
+      loading: true
     };
   },
   created() {
-    const me = this;
-
     if (typeof window.web3 !== 'undefined') {
       window.web3 = new Web3(window.web3.currentProvider);
     } else {
-      const ethNodeUrl = 'ws://localhost:8545'; // TODO: remote URL
+      const ethNodeUrl = new Web3.providers.HttpProvider('http://localhost:8545'); // TODO: remote URL
       window.web3 = new Web3(ethNodeUrl);
       console.log(window.web3);
     }
 
-    const { eth } = window.web3;
+    // const { eth } = window.web3;
 
-    eth.getBlockNumber().then(function(resolve) {
-      console.log(`getBlockNumber:${resolve}`);
-    });
+    // eth.getBlockNumber().then(function(resolve) {
+    //   console.log(`getBlockNumber:${resolve}`);
+    // });
 
-    eth.getAccounts().then(function(resolve) {
-      console.log(`getAccounts:${resolve}`);
-    });
+    // eth.getAccounts().then(function(resolve) {
+    //   console.log(`getAccounts:${resolve}`);
+    // });
 
-    eth
-      .getTransactionCount('0x7900681181e87B926A279769538f5325088eAdc1')
-      .then(function(resolve) {
-        console.log(`getTransactionCount:${resolve}`);
-      });
+    // eth
+    //   .getTransactionCount('0x7900681181e87B926A279769538f5325088eAdc1')
+    //   .then(function(resolve) {
+    //     console.log(`getTransactionCount:${resolve}`);
+    //   });
 
-    eth.getCoinbase().then(function(resolve) {
-      console.log(`getCoinbase:${resolve}`);
-    });
+    // eth.getCoinbase().then(function(resolve) {
+    //   console.log(`getCoinbase:${resolve}`);
+    // });
 
-    async function getBlocksAndTxs() {
+    this.refreshData();
+    this.timmer = setInterval(() => {
+      this.refreshData();
+    }, 60000);
+  },
+  methods: {
+    refreshData(){
+      try {
+        this.printBlocksAndTxs();
+      } catch (err) {
+        console.log(err);
+      }
+    },
+
+    async getBlocksAndTxs() {
+      const { eth } = window.web3;
       const blockNumber = await eth.getBlockNumber();
       const blocks = [];
       let txs = [];
@@ -146,7 +163,7 @@ export default {
       for (let i = 1; i <= 10; i++) {
         const block = await eth.getBlock(blockNumber-i);
 
-        block.timestamp = me.$filters.difference(block.timestamp);
+        block.timestamp = this.$filters.difference(block.timestamp);
         block.txn = block.transactions.length;
 
         blocks.push(block);
@@ -157,38 +174,36 @@ export default {
         blocks,
         txs
       };
-    }
+    },
 
-    async function printBlocksAndTxs() {
-      const result = await getBlocksAndTxs();
+    async printBlocksAndTxs() {
+      const { eth } = window.web3;
+      const result = await this.getBlocksAndTxs();
 
       const txs = result.txs;
       const handledTxs = [];
-
-      me.blocks = result.blocks;
       
-
-      for (let i = 1, len = result.txs.length; i < 10; i++) {
-        const handledTx = await eth.getTransaction(txs[len-i]);
-        
-        Object.keys(result.blocks).map(key => {
-          if(result.blocks[key].number === handledTx.blockNumber){
-            handledTx.timestamp = result.blocks[key].timestamp;
-          }
-        })
-        handledTxs.push(handledTx);
+      let len = result.txs.length;
+      if (len) {
+        for (let i = 1; i < 10; i++) {
+          const handledTx = await eth.getTransaction(txs[len-i]);
+          
+          Object.keys(result.blocks).map(key => {
+            if(result.blocks[key].number === handledTx.blockNumber){
+              handledTx.timestamp = result.blocks[key].timestamp;
+            }
+          })
+          handledTxs.push(handledTx);
+        }
       }
-      me.txs = handledTxs;
-    }
 
-    try {
-      printBlocksAndTxs();
-    } catch (err) {
-      console.log(err);
+      this.loading = false;
+      this.blocks = result.blocks;
+      this.txs = handledTxs;
     }
   },
-  methods: {
-    initHeader() {}
+  beforeDestroy(){
+    this.timmer && (this.timmer = null);
   }
 };
 </script>
@@ -216,6 +231,10 @@ export default {
   background-size: 20px 20px;
   height: 60px;
   overflow: hidden;
+}
+.table-body-nodata{
+  text-align: center;
+  padding: 30px;
 }
 .table-row {
   display: flex;
